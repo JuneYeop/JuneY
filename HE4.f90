@@ -1,7 +1,7 @@
 PROGRAM HE4_EXCITATION_SPECTRUM
 
 
-!--- DECLARATIONS OF VARIABLES ----------------------------- 
+!=== DECLARATIONS OF VARIABLES ==================================================
 
     IMPLICIT NONE
 
@@ -14,7 +14,7 @@ PROGRAM HE4_EXCITATION_SPECTRUM
     !! ground state variational parameters
     DOUBLE PRECISION :: c , b , delta , alpha
     !! excited states variational parameters
-    DOUBLE PRECISION :: r_0 , w  
+    !DOUBLE PRECISION :: r_0 , w  
     
     ! Positions of Helium atoms
     DOUBLE PRECISION, DIMENSION( spacial_dimension , number_of_particles ) :: RR_present , RR_proposed
@@ -27,8 +27,8 @@ PROGRAM HE4_EXCITATION_SPECTRUM
     DOUBLE PRECISION, DIMENSION( spacial_dimension , number_of_particles ) :: SS2_present , SS2_proposed
     
     ! Random deviations on Shadow variables
-    DOUBLE PRECISION :: delta_SS1_x , delta_SS1_y ! size of box (-0.5 , 0.5) , in Angstrom scale , should be adjusted reffering the acceptance rate
-    DOUBLE PRECISION :: delta_SS2_x , delta_SS2_y
+    DOUBLE PRECISION :: delta_SS1_x , delta_SS1_y ! size of box (-0.7 , 0.7) , in Angstrom scale , should be adjusted reffering the acceptance rate
+    DOUBLE PRECISION :: delta_SS2_x , delta_SS2_y ! same size with SS1
 
     ! Probability ratio in the Metropolis algorithm
     DOUBLE PRECISION :: probability_ratio_RR , probability_ratio_SS1 , probability_ratio_SS2
@@ -40,24 +40,32 @@ PROGRAM HE4_EXCITATION_SPECTRUM
     DOUBLE PRECISION :: RND_Metropolis_RR , RND_Metropolis_SS1 , RND_Metropolis_SS2
 
     ! DUMMY VARIABLES
-    INTEGER :: i , j , iteration , axis , particle
+    INTEGER :: i , iteration , axis , particle , particle_1 , particle_2
     
     ! Monte-Carlo steps
-    INTEGER, PARAMETER :: MC_steps = 100000
+    INTEGER, PARAMETER :: MC_steps = 1000000 , N_equilibrium = 500000
 
     ! Acceptance rate
     INTEGER :: N_accepted_RR , N_accepted_SS1 , N_accepted_SS2
     REAL    :: acceptance_rate_RR , acceptance_rate_SS1 , acceptance_rate_SS2
 
+    ! ENERGIES
+    DOUBLE PRECISION :: KINETIC , INTERATOMIC_POTENTIAL , TOTAL_ENERGY
+    DOUBLE PRECISION, ALLOCATABLE, DIMENSION(:) :: TOTAL_ENERGY_MC_average
+
     ! Execution time eastimation
     REAL :: start , end , execution_time
+
+
+    ALLOCATE( TOTAL_ENERGY_MC_average(MC_steps - N_equilibrium) )
+
+!=====================================================================================
+
 
     CALL CPU_TIME(start)
 
 
-
-
-!--- DETERMINATION OF VARIATIONAL PARAMETERS USING THE GROUND STATE SHADOW WAVE FUNCTION
+!=== DETERMINATION OF VARIATIONAL PARAMETERS USING THE GROUND STATE SHADOW WAVE FUNCTION ==========
 
 
     ! INITIALISATION OF THE LOCATIONS OF HELIUM ATOMS AND THE SHADOW VARIABLES
@@ -96,12 +104,19 @@ PROGRAM HE4_EXCITATION_SPECTRUM
     alpha = 0.90
 
 
-    N_accepted_RR = 0
+    N_accepted_RR  = 0
     N_accepted_SS1 = 0
     N_accepted_SS2 = 0
 
 
-    !=== MAIN LOOP ============================================================
+
+
+!=== MAIN LOOP =======================================================================
+
+
+    TOTAL_ENERGY_MC_average = 0.
+
+
     DO iteration = 1 , MC_steps , +1
 
 
@@ -109,7 +124,7 @@ PROGRAM HE4_EXCITATION_SPECTRUM
 
         ! Choose a new coordinate with uniform probability in a cube of side delta_RR (-0.5, 0.5) centered at the present coordinate.
         ! The size of box should make the acceptance rate is became less than 0.5.
-        particle = 0
+
         DO particle = 1 , Number_of_particles , +1
 
             RR_proposed = RR_present
@@ -119,17 +134,33 @@ PROGRAM HE4_EXCITATION_SPECTRUM
             CALL RANDOM_NUMBER(delta_RR_y)
 
             ! (-0.5, +0.5)
-            delta_RR_x = -0.5 + delta_RR_x
-            delta_RR_y = -0.5 + delta_RR_y
+            delta_RR_x = -0.5 + 1.0 * delta_RR_x
+            delta_RR_y = -0.5 + 1.0 * delta_RR_y
 
             RR_proposed(1, particle) = RR_present(1, particle) + delta_RR_x
             RR_proposed(2, particle) = RR_present(2, particle) + delta_RR_y
 
 
-            ! Calculation of the probability ratio
-            probability_ratio_RR = 1.0
+            ! PERIODIC BOUNDARY CONDITIONS
 
-            i = 0
+            DO i = 1 , spacial_dimension , +1
+
+                IF ( RR_proposed(i, particle) > 10. ) THEN 
+
+                    RR_proposed(i, particle) = RR_proposed(i, particle) - 20.
+
+                ELSE IF ( RR_proposed(i, particle) < -10. ) THEN
+
+                    RR_proposed(i, particle) = RR_proposed(i, particle) + 20.
+
+                END IF
+            
+            END DO
+
+
+            ! Calculation of the probability ratio
+            probability_ratio_RR = 1.
+
             DO i = 1 , Number_of_particles , +1
 
                 IF ( i == particle ) THEN
@@ -169,11 +200,10 @@ PROGRAM HE4_EXCITATION_SPECTRUM
             
             END IF
 
-            !print *, N_accepted_RR
-            !print *, probability_ratio_RR
-
 
         END DO
+        !---------------------------------------------------------------
+
 
 
 
@@ -181,7 +211,7 @@ PROGRAM HE4_EXCITATION_SPECTRUM
 
         ! Choose a new coordinate with uniform probability in a cube of side delta_SS1 (-0.5, 0.5) centered at the present coordinate.
         ! The size of box should make the acceptance rate is became less than 0.5.
-        particle = 0
+
         DO particle = 1 , Number_of_particles , +1
 
             SS1_proposed = SS1_present
@@ -190,18 +220,34 @@ PROGRAM HE4_EXCITATION_SPECTRUM
             CALL RANDOM_NUMBER(delta_SS1_x)
             CALL RANDOM_NUMBER(delta_SS1_y)
 
-            ! (-0.5, +0.5)
-            delta_SS1_x = -0.5 + delta_SS1_x
-            delta_SS1_y = -0.5 + delta_SS1_y
+            ! (-0.7, +0.7)
+            delta_SS1_x = -0.7 + 1.4 * delta_SS1_x
+            delta_SS1_y = -0.7 + 1.4 * delta_SS1_y
 
             SS1_proposed(1, particle) = SS1_present(1, particle) + delta_SS1_x
             SS1_proposed(2, particle) = SS1_present(2, particle) + delta_SS1_y
 
 
+            ! PERIODIC BOUNDARY CONDITIONS
+
+            DO i = 1 , spacial_dimension , +1
+
+                IF ( SS1_proposed(i, particle) > 10. ) THEN 
+
+                    SS1_proposed(i, particle) = SS1_proposed(i, particle) - 20.
+
+                ELSE IF ( SS1_proposed(i, particle) < -10. ) THEN
+
+                    SS1_proposed(i, particle) = SS1_proposed(i, particle) + 20.
+
+                END IF
+            
+            END DO
+
+
             ! Calculation of the probability ratio
             probability_ratio_SS1 = 1.0
 
-            i = 0
             DO i = 1 , Number_of_particles , +1
 
                 IF ( i == particle ) THEN
@@ -240,11 +286,10 @@ PROGRAM HE4_EXCITATION_SPECTRUM
             
             END IF
 
-            !print *, N_accepted_SS1
-            !print *, probability_ratio_SS1
-
 
         END DO
+        !-----------------------------------------------------
+
 
 
 
@@ -252,7 +297,7 @@ PROGRAM HE4_EXCITATION_SPECTRUM
 
         ! Choose a new coordinate with uniform probability in a cube of side delta_SS2 (-0.5, 0.5) centered at the present coordinate.
         ! The size of box should make the acceptance rate is became less than 0.5.
-        particle = 0
+
         DO particle = 1 , Number_of_particles , +1
 
             SS2_proposed = SS2_present
@@ -261,18 +306,34 @@ PROGRAM HE4_EXCITATION_SPECTRUM
             CALL RANDOM_NUMBER(delta_SS2_x)
             CALL RANDOM_NUMBER(delta_SS2_y)
 
-            ! (-0.1, +0.1)
-            delta_SS2_x = -0.5 + delta_SS2_x
-            delta_SS2_y = -0.5 + delta_SS2_y
+            ! (-0.7, +0.7)
+            delta_SS2_x = -0.7 + 1.4 * delta_SS2_x
+            delta_SS2_y = -0.7 + 1.4 * delta_SS2_y
 
             SS2_proposed(1, particle) = SS2_present(1, particle) + delta_SS2_x
             SS2_proposed(2, particle) = SS2_present(2, particle) + delta_SS2_y
 
 
+            ! PERIODIC BOUNDARY CONDITIONS
+
+            DO i = 1 , spacial_dimension , +1
+
+                IF ( SS2_proposed(i, particle) > 10. ) THEN 
+
+                    SS2_proposed(i, particle) = SS2_proposed(i, particle) - 20.
+
+                ELSE IF ( SS2_proposed(i, particle) < -10. ) THEN
+
+                    SS2_proposed(i, particle) = SS2_proposed(i, particle) + 20.
+
+                END IF
+            
+            END DO
+
+
             ! Calculation of the probability ratio
             probability_ratio_SS2 = 1.0
 
-            i = 0
             DO i = 1 , Number_of_particles , +1
 
                 IF ( i == particle ) THEN
@@ -312,20 +373,127 @@ PROGRAM HE4_EXCITATION_SPECTRUM
             END IF
 
 
-
         END DO
+        !-----------------------------------------------
 
-        !print *, N_accepted_SS2
-        !print *, probability_ratio_SS2
 
-        !--------------------------------------------------------------------
+
+        !--- CALCULATION OF THE SYSTEM's ENERGY (PER PARTICLE) -----------------------
+
+        KINETIC = 0.
+        INTERATOMIC_POTENTIAL = 0.
+        TOTAL_ENERGY = 0.
+        
+        
+        IF ( iteration == N_equilibrium ) THEN
+
+            !--- INTERATOMIC POTENTIAL ENERGY -------------------
+            DO particle_1 = 1 , Number_of_particles , +1
+
+                DO particle_2 = 1 , Number_of_particles , +1
+
+                    IF ( particle_1 > particle_2 ) THEN
+
+                        ! CALCULATE THE INTERATOMIC POTENTIAL OF THE TWO PICKED PARTICLES
+                        INTERATOMIC_POTENTIAL       &
+                            = INTERATOMIC_POTENTIAL &
+                            + interatomic_V( separation( RR_present(: , particle_1) , RR_present(: , particle_2) ))
+
+                    ELSE
+
+                        CONTINUE
+                    
+                    END IF
+            
+                END DO
+            
+            END DO
+
+            INTERATOMIC_POTENTIAL = INTERATOMIC_POTENTIAL / (1. * Number_of_particles)
+
+
+
+            !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            !
+            !                  KINETIC ENERGY
+            !
+            !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+            TOTAL_ENERGY = KINETIC + INTERATOMIC_POTENTIAL
+
+            TOTAL_ENERGY_MC_average(iteration) = TOTAL_ENERGY
+
+
+
+        ELSE 
+
+            IF ( iteration > N_equilibrium ) THEN
+
+                !--- INTERATOMIC POTENTIAL ENERGY -------------------
+                DO particle_1 = 1 , Number_of_particles , +1
+
+                    DO particle_2 = 1 , Number_of_particles , +1
+
+                        IF ( particle_1 > particle_2 ) THEN
+
+                            ! CALCULATE THE INTERATOMIC POTENTIAL OF THE TWO PICKED PARTICLES
+                            INTERATOMIC_POTENTIAL       &
+                                = INTERATOMIC_POTENTIAL &
+                                + interatomic_V( separation( RR_present(: , particle_1) , RR_present(: , particle_2) ))
+
+                        ELSE
+
+                            CONTINUE
+                    
+                        END IF
+            
+                    END DO
+            
+                END DO
+
+                INTERATOMIC_POTENTIAL = INTERATOMIC_POTENTIAL / (1. * Number_of_particles)
+
+
+
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                !
+                !                  KINETIC ENERGY
+                !
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+                TOTAL_ENERGY = KINETIC + INTERATOMIC_POTENTIAL
+        
+                TOTAL_ENERGY_MC_average(iteration) &
+                                    = TOTAL_ENERGY_MC_average(iteration - 1) &
+                                    + ( TOTAL_ENERGY - TOTAL_ENERGY_MC_average(iteration - 1) ) / (MC_steps - N_equilibrium + 1)
+
+
+            ELSE
+
+                CONTINUE
+
+            END IF
+
+
+        END IF
+
+
+
+
+        !==============================================================
 
     
     END DO
 
 
+!==============================================================================================
 
-    acceptance_rate_RR  = 1.*N_accepted_RR / ( MC_steps * Number_of_particles)
+
+    acceptance_rate_RR  = 1.*N_accepted_RR  / ( MC_steps * Number_of_particles)
     acceptance_rate_SS1 = 1.*N_accepted_SS1 / ( MC_steps * Number_of_particles)
     acceptance_rate_SS2 = 1.*N_accepted_SS2 / ( MC_steps * Number_of_particles)
 
@@ -336,19 +504,9 @@ PROGRAM HE4_EXCITATION_SPECTRUM
     PRINT *, "SS2 = " , acceptance_rate_SS2
 
 
-    
+!==============================================================================================
 
-
-
-
-
-    ! MONTE-CARLO DO LOOP 바깥쪽에 VARIATIONAL PARAMETER를 조정해서 ENERGY를 MINIMISE하는 
-    ! STEEPEST DESCENT METHOD LOOP가 들어와야 할듯.
-
-
-
-
-
+    DEALLOCATE(TOTAL_ENERGY_MC_average)
 
     CALL CPU_TIME(end)
 
@@ -357,15 +515,17 @@ PROGRAM HE4_EXCITATION_SPECTRUM
     PRINT *, "EXECUTION TIME = ", execution_time , " SEC"
 
 
+!===============================================================================================
 
 
 
-!--- DECLARATIONS OF FUNCTIONS
+!--- DECLARATIONS OF FUNCTIONS --------------------------------------------------
     
+
     CONTAINS
 
 
-    !--- Calculate L2 Norm distance btw two vectors --------
+    !--- Calculation of the L2 Norm btw two vectors --------
     FUNCTION separation(array1 , array2)
 
         IMPLICIT NONE
@@ -373,7 +533,7 @@ PROGRAM HE4_EXCITATION_SPECTRUM
         DOUBLE PRECISION, DIMENSION(2) :: array1 , array2
         DOUBLE PRECISION               :: separation
 
-        separation = NORM2( array1 - array2 ) !* 10**(-10)  ! Rescale into meter scale from Angstrom scale.
+        separation = NORM2( array1 - array2 )  ! in Angstrom scale.
 
     END FUNCTION
     !-------------------------------------------------------
@@ -409,7 +569,7 @@ PROGRAM HE4_EXCITATION_SPECTRUM
         DOUBLE PRECISION, PARAMETER :: C8 = 0.4253785
         DOUBLE PRECISION, PARAMETER :: C10 = 0.178100
         DOUBLE PRECISION, PARAMETER :: D = 1.241314
-        DOUBLE PRECISION, PARAMETER :: r_m = 2.9673 !* 10**(-10) ! in meter scale
+        DOUBLE PRECISION, PARAMETER :: r_m = 2.9673 ! in Angstrom scale
 
         x = distance / r_m
 
@@ -430,7 +590,43 @@ PROGRAM HE4_EXCITATION_SPECTRUM
     !-------------------------------------------------------
 
 
-!=========================================================
+
+    !--- INTERATOMIC POTENTIAL -----------------------------
+    FUNCTION interatomic_V( distance )      ! input distance is should be in meter scale.
+    
+        IMPLICIT NONE
+        
+        DOUBLE PRECISION            :: interatomic_V , distance
+        DOUBLE PRECISION            :: x        
+        DOUBLE PRECISION, PARAMETER :: kb = 1.380649D-23
+        DOUBLE PRECISION, PARAMETER :: epsilon = kb * 10.8
+        DOUBLE PRECISION, PARAMETER :: A = 0.54485046
+        DOUBLE PRECISION, PARAMETER :: alphaa = 13.353384
+        DOUBLE PRECISION, PARAMETER :: C6 = 1.3732412
+        DOUBLE PRECISION, PARAMETER :: C8 = 0.4253785
+        DOUBLE PRECISION, PARAMETER :: C10 = 0.178100
+        DOUBLE PRECISION, PARAMETER :: D = 1.241314
+        DOUBLE PRECISION, PARAMETER :: r_m = 2.9673 ! in Angstrom scale
+
+        x = distance / r_m
+
+        IF ( x < D ) THEN
+            
+            interatomic_V = epsilon * ( EXP(- alphaa * x ) &
+                            - ( C6 / x**6  +  C8 / x**8  +  C10 / x**10 ) * EXP( -( D/x - 1 )**2 ) )  
+
+        ELSE 
+
+            interatomic_V = epsilon * ( EXP(- alphaa * x ) &
+                            - ( C6 / x**6  +  C8 / x**8  +  C10 / x**10 ) )
+
+        END IF
+
+    END FUNCTION interatomic_V
+    !-------------------------------------------------------
+
+
+!===============================================================================================
 
 
 
